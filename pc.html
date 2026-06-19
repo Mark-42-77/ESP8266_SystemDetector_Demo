@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能温控 - PC端</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      padding: 40px;
+      color: #fff;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 40px;
+    }
+    .header h1 { font-size: 32px; font-weight: 700; }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.1);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+    }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      transition: background 0.3s;
+    }
+    .status-dot.online { background: #22c55e; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.08);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px;
+      padding: 36px 32px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .card-icon { font-size: 32px; }
+    .card-title { font-size: 16px; opacity: 0.7; }
+    .card-value { font-size: 64px; font-weight: 700; line-height: 1; }
+    .card-unit  { font-size: 24px; font-weight: 400; opacity: 0.6; margin-left: 8px; }
+
+    .card.temp { border-top: 4px solid #f97316; }
+    .card.humi { border-top: 4px solid #06b6d4; }
+
+    .fan-section {
+      background: rgba(255,255,255,0.08);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 24px;
+      padding: 36px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .fan-info { display: flex; align-items: center; gap: 16px; }
+    .fan-icon { font-size: 40px; }
+    .fan-label { font-size: 20px; font-weight: 600; }
+    .fan-status { font-size: 14px; opacity: 0.6; margin-top: 4px; }
+
+    .fan-switch {
+      position: relative;
+      width: 80px; height: 40px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .fan-switch.on { background: #22c55e; }
+    .fan-switch::after {
+      content: '';
+      position: absolute;
+      top: 4px; left: 4px;
+      width: 32px; height: 32px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.3s;
+    }
+    .fan-switch.on::after { transform: translateX(40px); }
+
+    .log-section {
+      margin-top: 24px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    .log-title { font-size: 14px; opacity: 0.6; margin-bottom: 12px; }
+    .log-list {
+      max-height: 180px;
+      overflow-y: auto;
+      font-family: "Cascadia Code", "Fira Code", monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      opacity: 0.8;
+    }
+    .log-entry { border-bottom: 1px solid rgba(255,255,255,0.05); padding: 4px 0; }
+    .log-time { color: #60a5fa; }
+
+    .footer {
+      text-align: center;
+      margin-top: 40px;
+      font-size: 12px;
+      opacity: 0.4;
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 20px; }
+      .grid { grid-template-columns: 1fr; }
+      .card-value { font-size: 48px; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>智能温控系统</h1>
+    <div class="status-badge">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">未连接</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card temp">
+      <div class="card-header">
+        <span class="card-icon">🌡️</span>
+        <span class="card-title">实时温度</span>
+      </div>
+      <div class="card-value"><span id="tempValue">--</span><span class="card-unit">°C</span></div>
+    </div>
+    <div class="card humi">
+      <div class="card-header">
+        <span class="card-icon">💧</span>
+        <span class="card-title">实时湿度</span>
+      </div>
+      <div class="card-value"><span id="humiValue">--</span><span class="card-unit">%</span></div>
+    </div>
+  </div>
+
+  <div class="fan-section">
+    <div class="fan-info">
+      <span class="fan-icon">💨</span>
+      <div>
+        <div class="fan-label">风扇控制</div>
+        <div class="fan-status" id="fanStatusText">当前状态：关闭</div>
+      </div>
+    </div>
+    <div class="fan-switch" id="fanSwitch" onclick="toggleFan()"></div>
+  </div>
+
+  <div class="log-section">
+    <div class="log-title">数据日志</div>
+    <div class="log-list" id="logList">
+      <div class="log-entry" style="opacity:0.5;">等待数据...</div>
+    </div>
+  </div>
+
+  <div class="footer">EMQX Cloud · ESP8266 · 数据每 5 秒自动刷新</div>
+
+</div>
+
+<!-- MQTT.js CDN -->
+<script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+<script>
+  // ========== 配置 ==========
+  const BROKER_URL  = 'wss://ac813c9c.ala.cn-shenzhen.emqxsl.cn:8084/mqtt';
+  const MQTT_USER   = 'web_client';
+  const MQTT_PASS   = 'web123';
+  const CLIENT_ID   = 'web_pc_' + Math.random().toString(16).slice(2, 10);
+
+  const TOPIC_DATA  = 'device/esp8266/data';
+  const TOPIC_FAN   = 'device/esp8266/fan';
+
+  // ========== 状态 ==========
+  let fanOn = false;
+  let client = null;
+  let logEntries = [];
+
+  // ========== DOM ==========
+  const statusDot    = document.getElementById('statusDot');
+  const statusText   = document.getElementById('statusText');
+  const tempValue    = document.getElementById('tempValue');
+  const humiValue    = document.getElementById('humiValue');
+  const fanSwitch    = document.getElementById('fanSwitch');
+  const fanStatusTxt = document.getElementById('fanStatusText');
+  const logList      = document.getElementById('logList');
+
+  // ========== 连接 MQTT ==========
+  function connect() {
+    client = mqtt.connect(BROKER_URL, {
+      clientId: CLIENT_ID,
+      username: MQTT_USER,
+      password: MQTT_PASS,
+      clean: true,
+      reconnectPeriod: 3000,
+    });
+
+    client.on('connect', () => {
+      statusDot.classList.add('online');
+      statusText.textContent = '已连接';
+      client.subscribe(TOPIC_DATA);
+      addLog('系统', 'MQTT 连接成功');
+      console.log('MQTT connected');
+    });
+
+    client.on('message', (topic, payload) => {
+      if (topic === TOPIC_DATA) {
+        try {
+          const data = JSON.parse(payload.toString());
+          tempValue.textContent = data.temp.toFixed(1);
+          humiValue.textContent = data.humi.toFixed(1);
+          fanOn = (data.fan === 'ON');
+          updateFanUI();
+          addLog('数据', `${data.temp.toFixed(1)}°C / ${data.humi.toFixed(1)}% / 风扇${data.fan}`);
+        } catch (e) { console.error('Parse error:', e); }
+      }
+    });
+
+    client.on('close', () => {
+      statusDot.classList.remove('online');
+      statusText.textContent = '已断开，重连中...';
+    });
+
+    client.on('error', (err) => {
+      console.error('MQTT error:', err);
+      addLog('错误', err.message || String(err));
+    });
+  }
+
+  // ========== 风扇控制 ==========
+  function toggleFan() {
+    fanOn = !fanOn;
+    updateFanUI();
+    if (client && client.connected) {
+      client.publish(TOPIC_FAN, fanOn ? 'ON' : 'OFF');
+      addLog('控制', `风扇 -> ${fanOn ? '开启' : '关闭'}`);
+    }
+  }
+
+  function updateFanUI() {
+    if (fanOn) {
+      fanSwitch.classList.add('on');
+      fanStatusTxt.textContent = '当前状态：运行中';
+    } else {
+      fanSwitch.classList.remove('on');
+      fanStatusTxt.textContent = '当前状态：关闭';
+    }
+  }
+
+  // ========== 日志 ==========
+  function addLog(tag, msg) {
+    const now = new Date();
+    const timeStr = now.toTimeString().slice(0, 8);
+    logEntries.unshift({ time: timeStr, tag, msg });
+    if (logEntries.length > 50) logEntries.pop();
+    renderLog();
+  }
+
+  function renderLog() {
+    logList.innerHTML = logEntries.map(e =>
+      `<div class="log-entry"><span class="log-time">[${e.time}]</span> [${e.tag}] ${e.msg}</div>`
+    ).join('');
+  }
+
+  // ========== 启动 ==========
+  connect();
+</script>
+</body>
+</html>

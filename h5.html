@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能温控 - 手机版</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px 16px;
+      color: #fff;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .header h1 { font-size: 24px; font-weight: 600; }
+    .status-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      margin-right: 6px;
+      transition: background 0.3s;
+    }
+    .status-dot.online { background: #22c55e; }
+    .status-text { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+
+    .card {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 28px 24px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .card-icon { font-size: 40px; margin-bottom: 10px; }
+    .card-label { font-size: 14px; opacity: 0.8; margin-bottom: 8px; }
+    .card-value { font-size: 48px; font-weight: 700; }
+    .card-unit  { font-size: 18px; font-weight: 400; opacity: 0.7; }
+
+    .fan-card {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 28px 24px;
+      text-align: center;
+    }
+    .fan-label { font-size: 16px; margin-bottom: 16px; }
+    .fan-btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 18px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .fan-btn.on  { background: #22c55e; color: #fff; }
+    .fan-btn.off { background: rgba(255,255,255,0.2); color: #fff; }
+    .fan-btn:active { transform: scale(0.96); }
+
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      font-size: 12px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>智能温控系统</h1>
+  <div class="status-text">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">未连接</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-icon">🌡️</div>
+  <div class="card-label">温度</div>
+  <div class="card-value"><span id="tempValue">--</span><span class="card-unit">°C</span></div>
+</div>
+
+<div class="card">
+  <div class="card-icon">💧</div>
+  <div class="card-label">湿度</div>
+  <div class="card-value"><span id="humiValue">--</span><span class="card-unit">%</span></div>
+</div>
+
+<div class="fan-card">
+  <div class="fan-label">💨 风扇控制</div>
+  <button class="fan-btn off" id="fanBtn" onclick="toggleFan()">开启风扇</button>
+</div>
+
+<div class="footer">数据每 5 秒自动刷新</div>
+
+<!-- MQTT.js CDN -->
+<script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+<script>
+  // ========== 配置 ==========
+  const BROKER_URL  = 'wss://ac813c9c.ala.cn-shenzhen.emqxsl.cn:8084/mqtt';
+  const MQTT_USER   = 'web_client';
+  const MQTT_PASS   = 'web123';
+  const CLIENT_ID   = 'web_h5_' + Math.random().toString(16).slice(2, 10);
+
+  const TOPIC_DATA  = 'device/esp8266/data';
+  const TOPIC_FAN   = 'device/esp8266/fan';
+
+  // ========== 状态 ==========
+  let fanOn = false;
+  let client = null;
+
+  // ========== DOM ==========
+  const statusDot  = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const tempValue  = document.getElementById('tempValue');
+  const humiValue  = document.getElementById('humiValue');
+  const fanBtn     = document.getElementById('fanBtn');
+
+  // ========== 连接 MQTT ==========
+  function connect() {
+    client = mqtt.connect(BROKER_URL, {
+      clientId: CLIENT_ID,
+      username: MQTT_USER,
+      password: MQTT_PASS,
+      clean: true,
+      reconnectPeriod: 3000,
+    });
+
+    client.on('connect', () => {
+      statusDot.classList.add('online');
+      statusText.textContent = '已连接';
+      client.subscribe(TOPIC_DATA);
+      console.log('MQTT connected');
+    });
+
+    client.on('message', (topic, payload) => {
+      if (topic === TOPIC_DATA) {
+        try {
+          const data = JSON.parse(payload.toString());
+          tempValue.textContent = data.temp.toFixed(1);
+          humiValue.textContent = data.humi.toFixed(1);
+          // 同步风扇状态
+          fanOn = (data.fan === 'ON');
+          updateFanBtn();
+        } catch (e) { console.error('Parse error:', e); }
+      }
+    });
+
+    client.on('close', () => {
+      statusDot.classList.remove('online');
+      statusText.textContent = '已断开，重连中...';
+    });
+
+    client.on('error', (err) => {
+      console.error('MQTT error:', err);
+    });
+  }
+
+  // ========== 风扇控制 ==========
+  function toggleFan() {
+    fanOn = !fanOn;
+    updateFanBtn();
+    if (client && client.connected) {
+      client.publish(TOPIC_FAN, fanOn ? 'ON' : 'OFF');
+      console.log('Fan ->', fanOn ? 'ON' : 'OFF');
+    }
+  }
+
+  function updateFanBtn() {
+    if (fanOn) {
+      fanBtn.className = 'fan-btn on';
+      fanBtn.textContent = '关闭风扇';
+    } else {
+      fanBtn.className = 'fan-btn off';
+      fanBtn.textContent = '开启风扇';
+    }
+  }
+
+  // ========== 启动 ==========
+  connect();
+</script>
+</body>
+</html>
