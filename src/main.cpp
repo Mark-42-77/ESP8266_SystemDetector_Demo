@@ -10,17 +10,23 @@
 const char* WIFI_SSID     = "TP-LINK_E14B";
 const char* WIFI_PASSWORD = "2kbctn2m";
 
-// ========== MQTT (EMQX Cloud) ==========
-const char* MQTT_BROKER   = "ac813c9c.ala.cn-shenzhen.emqxsl.cn";
-const int   MQTT_PORT     = 8883;
-const char* MQTT_USER     = "esp8266_device";
-const char* MQTT_PASS     = "device123";
-const char* MQTT_CLIENT_ID = "esp8266_001";
+// ========== MQTT (EMQX Cloud) — 暂时禁用 ==========
+// const char* MQTT_BROKER   = "ac813c9c.ala.cn-shenzhen.emqxsl.cn";
+// const int   MQTT_PORT     = 8883;
+// const char* MQTT_USER     = "esp8266_device";
+// const char* MQTT_PASS     = "device123";
+// const char* MQTT_CLIENT_ID = "esp8266_001";
 
-// ========== MQTT Topics ==========
-const char* TOPIC_DATA   = "device/esp8266/data";    // 设备 → 网页（传感器数据）
-const char* TOPIC_FAN    = "device/esp8266/fan";     // 网页 → 设备（风扇控制）
-const char* TOPIC_STATUS = "device/esp8266/status";  // 设备在线状态
+// ========== 巴法云 (Bemfa) ==========
+const char* BEMFA_SERVER   = "bemfa.com";
+const int   BEMFA_PORT     = 9501;
+const char* BEMFA_KEY      = "ff2aba976550475080b2c399fad134a0"; // UID/私钥
+const char* BEMFA_TOPIC    = "temp004";                     // 主题名
+
+// ========== MQTT Topics — 暂时禁用 ==========
+// const char* TOPIC_DATA   = "device/esp8266/data";
+// const char* TOPIC_FAN    = "device/esp8266/fan";
+// const char* TOPIC_STATUS = "device/esp8266/status";
 
 // ========== 硬件引脚 ==========
 #define DHTPIN     12    // D6
@@ -30,12 +36,16 @@ const char* TOPIC_STATUS = "device/esp8266/status";  // 设备在线状态
 // ========== 全局对象 ==========
 DHT dht(DHTPIN, DHTTYPE);
 TFT_eSPI tft = TFT_eSPI();
-BearSSL::WiFiClientSecure secureClient;
-PubSubClient mqtt(secureClient);
+// BearSSL::WiFiClientSecure secureClient;
+// PubSubClient mqtt(secureClient);
+
+// 巴法云客户端（明文 TCP，端口 9501，不走 TLS）
+WiFiClient bemfaClient;
+PubSubClient bemfa(bemfaClient);
 
 // ========== 时间控制 ==========
 unsigned long lastReadTime  = 0;
-unsigned long lastMqttTime  = 0;
+// unsigned long lastMqttTime  = 0;
 bool fanState = false;
 
 // ========== 启动旋转 Logo 动画 ==========
@@ -186,63 +196,71 @@ void connectWiFi() {
   }
 }
 
-// ========== MQTT 消息回调（接收风扇控制指令） ==========
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  String msg;
-  for (unsigned int i = 0; i < length; i++) {
-    msg += (char)payload[i];
-  }
+// ========== MQTT 消息回调（接收风扇控制指令） — 暂时禁用 ==========
+// void mqttCallback(char* topic, byte* payload, unsigned int length) {
+//   String msg;
+//   for (unsigned int i = 0; i < length; i++) {
+//     msg += (char)payload[i];
+//   }
+//   Serial.printf("MQTT Recv [%s]: %s\n", topic, msg.c_str());
+//   if (String(topic) == TOPIC_FAN) {
+//     fanState = (msg == "ON" || msg == "1");
+//     digitalWrite(FAN_PIN, fanState ? HIGH : LOW);
+//     Serial.printf("Fan -> %s\n", fanState ? "ON" : "OFF");
+//   }
+// }
 
-  Serial.printf("MQTT Recv [%s]: %s\n", topic, msg.c_str());
+// ========== MQTT 连接 — 暂时禁用 ==========
+// void connectMQTT() {
+//   if (mqtt.connected()) return;
+//   if (mqtt.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
+//     Serial.println("MQTT connected!");
+//     mqtt.publish(TOPIC_STATUS, "online", true);
+//     mqtt.subscribe(TOPIC_FAN);
+//   } else {
+//     Serial.printf("MQTT failed, rc=%d\n", mqtt.state());
+//   }
+// }
 
-  if (String(topic) == TOPIC_FAN) {
-    fanState = (msg == "ON" || msg == "1");
-    digitalWrite(FAN_PIN, fanState ? HIGH : LOW);
-    Serial.printf("Fan -> %s\n", fanState ? "ON" : "OFF");
-  }
-}
+// ========== 巴法云连接 ==========
+void connectBemfa() {
+  if (bemfa.connected()) return;
 
-// ========== MQTT 连接 ==========
-void connectMQTT() {
-  if (mqtt.connected()) return;
+  Serial.printf("Bemfa connecting to %s:%d ...\n", BEMFA_SERVER, BEMFA_PORT);
+  Serial.printf("  clientId=%s\n", BEMFA_KEY);
 
-  tft.setCursor(10, 160);
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.print("MQTT connecting...");
-
-  if (mqtt.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
-    Serial.println("MQTT connected!");
-    tft.setCursor(10, 160);
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.print("MQTT OK!         ");
-
-    // 发布在线状态
-    mqtt.publish(TOPIC_STATUS, "online", true);
-
-    // 订阅风扇控制主题
-    mqtt.subscribe(TOPIC_FAN);
+  // 巴法云认证：clientId=私钥，用户名密码为空
+  bool ok = bemfa.connect(BEMFA_KEY);
+  if (ok) {
+    Serial.println("Bemfa connected!");
+    // 订阅主题
+    bemfa.subscribe(BEMFA_TOPIC);
+    Serial.printf("Bemfa subscribed: %s\n", BEMFA_TOPIC);
   } else {
-    Serial.printf("MQTT failed, rc=%d\n", mqtt.state());
-    tft.setCursor(10, 160);
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.printf("MQTT FAIL rc=%d ", mqtt.state());
+    Serial.printf("Bemfa failed, rc=%d\n", bemfa.state());
   }
 }
 
-// ========== 发布传感器数据 ==========
-void publishData(float temp, float humi) {
-  StaticJsonDocument<256> doc;
-  doc["temp"]  = temp;
-  doc["humi"]  = humi;
-  doc["fan"]   = fanState ? "ON" : "OFF";
-  doc["ts"]    = millis();
+// ========== 巴法云上报 ==========
+void publishBemfa(float temp, float humi) {
+  // 巴法云格式：#温度#湿度#开关状态（和教程一致）
+  String msg = "#" + String((int)temp) + "#" + String((int)humi) + "#" + (fanState ? "on" : "off");
 
-  char buf[256];
-  serializeJson(doc, buf);
-
-  mqtt.publish(TOPIC_DATA, buf);
-  Serial.printf("MQTT Pub: %s\n", buf);
+  bool ok = bemfa.publish(BEMFA_TOPIC, msg.c_str());
+  Serial.printf("Bemfa Pub: %s -> %s\n", msg.c_str(), ok ? "OK" : "FAIL");
 }
+
+// ========== 发布传感器数据（EMQX） — 暂时禁用 ==========
+// void publishData(float temp, float humi) {
+//   StaticJsonDocument<256> doc;
+//   doc["temp"]  = temp;
+//   doc["humi"]  = humi;
+//   doc["fan"]   = fanState ? "ON" : "OFF";
+//   doc["ts"]    = millis();
+//   char buf[256];
+//   serializeJson(doc, buf);
+//   mqtt.publish(TOPIC_DATA, buf);
+// }
 
 // ========== 屏幕显示数据 ==========
 void drawScreen(float temp, float humi) {
@@ -278,15 +296,21 @@ void setup() {
 
   showBootAnimation();
 
-  // TLS 跳过证书校验（适合个人项目，生产环境应使用证书）
-  secureClient.setInsecure();
+  // TLS 跳过证书校验 — 暂时禁用（EMQX 关闭后不需要）
+  // secureClient.setInsecure();
 
   connectWiFi();
   delay(500);
 
-  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-  mqtt.setCallback(mqttCallback);
-  connectMQTT();
+  // EMQX — 暂时禁用
+  // mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+  // mqtt.setCallback(mqttCallback);
+  // connectMQTT();
+
+  // 巴法云
+  bemfa.setServer(BEMFA_SERVER, BEMFA_PORT);
+  bemfa.setKeepAlive(60);
+  connectBemfa();
 
   delay(1000);
   tft.fillScreen(TFT_BLACK);
@@ -300,12 +324,18 @@ void loop() {
     connectWiFi();
   }
 
-  // MQTT 断线重连
-  if (!mqtt.connected()) {
-    connectMQTT();
-    delay(100);
+  // EMQX 断线重连 — 暂时禁用
+  // if (!mqtt.connected()) {
+  //   connectMQTT();
+  //   delay(100);
+  // }
+  // mqtt.loop();
+
+  // 巴法云断线重连
+  if (!bemfa.connected()) {
+    connectBemfa();
   }
-  mqtt.loop();
+  bemfa.loop();
 
   // 传感器采样（2秒间隔）
   if (millis() - lastReadTime > 2000) {
@@ -325,10 +355,19 @@ void loop() {
     Serial.printf("Temp: %.1f C  Humi: %.1f %%\n", t, h);
     drawScreen(t, h);
 
-    // MQTT 上报（5秒间隔）
-    if (millis() - lastMqttTime > 5000) {
-      lastMqttTime = millis();
-      publishData(t, h);
+    // 巴法云上报（5秒间隔）
+    static unsigned long lastBemfaTime = 0;
+    if (millis() - lastBemfaTime > 5000) {
+      lastBemfaTime = millis();
+      if (bemfa.connected()) {
+        publishBemfa(t, h);
+      }
     }
+
+    // EMQX 上报 — 暂时禁用
+    // if (millis() - lastMqttTime > 5000) {
+    //   lastMqttTime = millis();
+    //   publishData(t, h);
+    // }
   }
 }
