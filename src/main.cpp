@@ -12,7 +12,9 @@ const char* WIFI_PASSWORD = "2kbctn2m";
 const char* BEMFA_SERVER   = "bemfa.com";
 const int   BEMFA_PORT     = 9501;
 const char* BEMFA_KEY      = "ff2aba976550475080b2c399fad134a0"; // UID/私钥
-const char* BEMFA_TOPIC    = "temp004";                     // 主题名
+const char* TOPIC_TEMP     = "temp004";                     // 温湿度主题
+const char* TOPIC_FAN1     = "fan003";                      // 风扇1主题
+const char* TOPIC_FAN2     = "light003";                    // 风扇2主题
 
 // ========== 硬件引脚 ==========
 #define DHTPIN     12    // D6
@@ -171,25 +173,32 @@ void bemfaCallback(char* topic, byte* payload, unsigned int length) {
   for (unsigned int i = 0; i < length; i++) {
     msg += (char)payload[i];
   }
-  Serial.printf("Bemfa Recv: %s\n", msg.c_str());
+  Serial.printf("Bemfa Recv [%s]: %s\n", topic, msg.c_str());
 
-  // 风扇控制指令
-  if (msg == "on") {
-    fan1State = true;
-    digitalWrite(FAN1_PIN, HIGH);
-    Serial.println("Fan1 ON");
-  } else if (msg == "off") {
-    fan1State = false;
-    digitalWrite(FAN1_PIN, LOW);
-    Serial.println("Fan1 OFF");
-  } else if (msg == "on2") {
-    fan2State = true;
-    digitalWrite(FAN2_PIN, HIGH);
-    Serial.println("Fan2 ON");
-  } else if (msg == "off2") {
-    fan2State = false;
-    digitalWrite(FAN2_PIN, LOW);
-    Serial.println("Fan2 OFF");
+  // 风扇1控制（fan003 主题）
+  if (String(topic) == TOPIC_FAN1) {
+    if (msg == "on") {
+      fan1State = true;
+      digitalWrite(FAN1_PIN, HIGH);
+      Serial.println("Fan1 ON");
+    } else if (msg == "off") {
+      fan1State = false;
+      digitalWrite(FAN1_PIN, LOW);
+      Serial.println("Fan1 OFF");
+    }
+  }
+
+  // 风扇2控制（light003 主题）
+  if (String(topic) == TOPIC_FAN2) {
+    if (msg == "on") {
+      fan2State = true;
+      digitalWrite(FAN2_PIN, HIGH);
+      Serial.println("Fan2 ON");
+    } else if (msg == "off") {
+      fan2State = false;
+      digitalWrite(FAN2_PIN, LOW);
+      Serial.println("Fan2 OFF");
+    }
   }
 }
 
@@ -203,8 +212,10 @@ void connectBemfa() {
   bool ok = bemfa.connect(BEMFA_KEY);
   if (ok) {
     Serial.println("Bemfa connected!");
-    bemfa.subscribe(BEMFA_TOPIC);
-    Serial.printf("Bemfa subscribed: %s\n", BEMFA_TOPIC);
+    bemfa.subscribe(TOPIC_TEMP);
+    bemfa.subscribe(TOPIC_FAN1);
+    bemfa.subscribe(TOPIC_FAN2);
+    Serial.printf("Bemfa subscribed: %s, %s, %s\n", TOPIC_TEMP, TOPIC_FAN1, TOPIC_FAN2);
   } else {
     Serial.printf("Bemfa failed, rc=%d\n", bemfa.state());
   }
@@ -216,7 +227,7 @@ void publishBemfa(float temp, float humi) {
   String msg = "#" + String((int)temp) + "#" + String((int)humi) + "#" +
                (fan1State ? "on" : "off") + "#" + (fan2State ? "on" : "off");
 
-  bool ok = bemfa.publish(BEMFA_TOPIC, msg.c_str());
+  bool ok = bemfa.publish(TOPIC_TEMP, msg.c_str());
   Serial.printf("Bemfa Pub: %s -> %s\n", msg.c_str(), ok ? "OK" : "FAIL");
 }
 

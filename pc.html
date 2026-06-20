@@ -202,7 +202,9 @@
   // ========== 巴法云配置 ==========
   const BROKER_URL = 'wss://bemfa.com:9504/wss';
   const BEMFA_KEY  = 'ff2aba976550475080b2c399fad134a0';
-  const TOPIC      = 'temp004';
+  const TOPIC_TEMP = 'temp004';
+  const TOPIC_FAN1 = 'fan003';
+  const TOPIC_FAN2 = 'light003';
 
   // ========== 状态 ==========
   let fan1On = false;
@@ -232,7 +234,9 @@
     client.on('connect', () => {
       statusDot.classList.add('online');
       statusText.textContent = '已连接';
-      client.subscribe(TOPIC);
+      client.subscribe(TOPIC_TEMP);
+      client.subscribe(TOPIC_FAN1);
+      client.subscribe(TOPIC_FAN2);
       addLog('系统', '巴法云连接成功');
       console.log('Bemfa connected');
     });
@@ -274,14 +278,14 @@
       fan1On = !fan1On;
       updateFan1UI();
       if (client && client.connected) {
-        client.publish(TOPIC, fan1On ? 'on' : 'off');
+        client.publish(TOPIC_FAN1, fan1On ? 'on' : 'off');
         addLog('控制', `风扇1 -> ${fan1On ? '开启' : '关闭'}`);
       }
     } else {
       fan2On = !fan2On;
       updateFan2UI();
       if (client && client.connected) {
-        client.publish(TOPIC, fan2On ? 'on2' : 'off2');
+        client.publish(TOPIC_FAN2, fan2On ? 'on' : 'off');
         addLog('控制', `风扇2 -> ${fan2On ? '开启' : '关闭'}`);
       }
     }
