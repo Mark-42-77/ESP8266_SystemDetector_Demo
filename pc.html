@@ -22,6 +22,12 @@
       margin-bottom: 40px;
     }
     .header h1 { font-size: 32px; font-weight: 700; }
+    .time-bar {
+      font-size: 14px;
+      opacity: 0.7;
+      margin-bottom: 8px;
+      font-family: "Cascadia Code", "Fira Code", monospace;
+    }
     .status-badge {
       display: flex;
       align-items: center;
@@ -138,7 +144,10 @@
 <div class="container">
 
   <div class="header">
-    <h1>智能温控系统</h1>
+    <div>
+      <h1>智能温控系统</h1>
+      <div class="time-bar" id="timeDisplay"></div>
+    </div>
     <div class="status-badge">
       <div class="status-dot" id="statusDot"></div>
       <span id="statusText">未连接</span>
@@ -325,6 +334,24 @@
       `<div class="log-entry"><span class="log-time">[${e.time}]</span> [${e.tag}] ${e.msg}</div>`
     ).join('');
   }
+
+  // ========== 时间显示 ==========
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const timeDisplay = document.getElementById('timeDisplay');
+
+  function updateTime() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const wd = weekDays[now.getDay()];
+    timeDisplay.textContent = `${y}-${m}-${d}  ${hh}:${mm}:${ss}  ${wd}`;
+  }
+  updateTime();
+  setInterval(updateTime, 1000);
 
   // ========== 启动 ==========
   connect();

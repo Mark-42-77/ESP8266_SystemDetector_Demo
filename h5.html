@@ -76,6 +76,7 @@
 
 <div class="header">
   <h1>智能温控系统</h1>
+  <div id="timeDisplay" style="font-size:14px; opacity:0.8; margin:6px 0;"></div>
   <div class="status-text">
     <span class="status-dot" id="statusDot"></span>
     <span id="statusText">未连接</span>
@@ -213,6 +214,24 @@
       fan2Btn.textContent = '开启风扇2';
     }
   }
+
+  // ========== 时间显示 ==========
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const timeDisplay = document.getElementById('timeDisplay');
+
+  function updateTime() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const wd = weekDays[now.getDay()];
+    timeDisplay.textContent = `${y}-${m}-${d}  ${hh}:${mm}:${ss}  ${wd}`;
+  }
+  updateTime();
+  setInterval(updateTime, 1000);
 
   // ========== 启动 ==========
   connect();

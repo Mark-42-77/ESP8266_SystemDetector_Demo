@@ -3,6 +3,7 @@
 #include <DHT.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include <time.h>
 
 // ========== WiFi ==========
 const char* WIFI_SSID     = "TP-LINK_E14B";
@@ -34,6 +35,12 @@ PubSubClient bemfa(bemfaClient);
 unsigned long lastReadTime  = 0;
 bool fan1State = false;  // 风扇1状态
 bool fan2State = false;  // 风扇2状态
+
+// NTP 配置
+const char* NTP_SERVER1 = "ntp.aliyun.com";
+const char* NTP_SERVER2 = "pool.ntp.org";
+const long GMT_OFFSET = 8 * 3600;  // 中国时区 UTC+8
+const int DST_OFFSET = 0;          // 夏令时偏移
 
 // ========== 启动旋转 Logo 动画 ==========
 void showBootAnimation() {
@@ -231,22 +238,55 @@ void publishBemfa(float temp, float humi) {
   Serial.printf("Bemfa Pub: %s -> %s\n", msg.c_str(), ok ? "OK" : "FAIL");
 }
 
+// ========== 获取星期字符串 ==========
+const char* getWeekDay(int wday) {
+  const char* weekDays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  return weekDays[wday];
+}
+
+// ========== 屏幕显示时间 ==========
+void drawTime() {
+  time_t now = time(nullptr);
+  struct tm* timeInfo = localtime(&now);
+
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(10, 10);
+  tft.printf("%04d-%02d-%02d",
+             timeInfo->tm_year + 1900,
+             timeInfo->tm_mon + 1,
+             timeInfo->tm_mday);
+
+  tft.setCursor(10, 35);
+  tft.printf("%02d:%02d:%02d %s",
+             timeInfo->tm_hour,
+             timeInfo->tm_min,
+             timeInfo->tm_sec,
+             getWeekDay(timeInfo->tm_wday));
+}
+
 // ========== 屏幕显示数据 ==========
 void drawScreen(float temp, float humi) {
+  // 显示时间
+  drawTime();
+
+  // 显示温湿度
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.setCursor(10, 30);
+  tft.setTextSize(2);
+  tft.setCursor(10, 70);
   tft.printf("Temp: %.1f C   ", temp);
 
   tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.setCursor(10, 60);
+  tft.setCursor(10, 100);
   tft.printf("Humi: %.1f %%   ", humi);
 
+  // 显示风扇状态
   tft.setTextColor(fan1State ? TFT_RED : TFT_WHITE, TFT_BLACK);
-  tft.setCursor(10, 90);
+  tft.setCursor(10, 130);
   tft.printf("Fan1: %s   ", fan1State ? "ON " : "OFF");
 
   tft.setTextColor(fan2State ? TFT_RED : TFT_WHITE, TFT_BLACK);
-  tft.setCursor(10, 120);
+  tft.setCursor(10, 160);
   tft.printf("Fan2: %s   ", fan2State ? "ON " : "OFF");
 }
 
@@ -270,6 +310,17 @@ void setup() {
 
   connectWiFi();
   delay(500);
+
+  // NTP 时间同步
+  configTime(GMT_OFFSET, DST_OFFSET, NTP_SERVER1, NTP_SERVER2);
+  Serial.println("Waiting for NTP time sync...");
+  time_t now = time(nullptr);
+  while (now < 8 * 3600 * 2) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+  Serial.println("\nNTP time synced!");
 
   // 巴法云
   bemfa.setServer(BEMFA_SERVER, BEMFA_PORT);
