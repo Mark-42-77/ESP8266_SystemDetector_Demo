@@ -17,7 +17,8 @@ const char* BEMFA_TOPIC    = "temp004";                     // 主题名
 // ========== 硬件引脚 ==========
 #define DHTPIN     12    // D6
 #define DHTTYPE    DHT11
-#define FAN_PIN    4     // D2（风扇控制引脚，可改）
+#define FAN1_PIN   4     // D2（风扇1）
+#define FAN2_PIN   5     // D1（风扇2）
 
 // ========== 全局对象 ==========
 DHT dht(DHTPIN, DHTTYPE);
@@ -29,7 +30,8 @@ PubSubClient bemfa(bemfaClient);
 
 // ========== 时间控制 ==========
 unsigned long lastReadTime  = 0;
-bool fanState = false;
+bool fan1State = false;  // 风扇1状态
+bool fan2State = false;  // 风扇2状态
 
 // ========== 启动旋转 Logo 动画 ==========
 void showBootAnimation() {
@@ -163,6 +165,34 @@ void connectWiFi() {
   }
 }
 
+// ========== 巴法云回调（接收控制指令） ==========
+void bemfaCallback(char* topic, byte* payload, unsigned int length) {
+  String msg;
+  for (unsigned int i = 0; i < length; i++) {
+    msg += (char)payload[i];
+  }
+  Serial.printf("Bemfa Recv: %s\n", msg.c_str());
+
+  // 风扇控制指令
+  if (msg == "on") {
+    fan1State = true;
+    digitalWrite(FAN1_PIN, HIGH);
+    Serial.println("Fan1 ON");
+  } else if (msg == "off") {
+    fan1State = false;
+    digitalWrite(FAN1_PIN, LOW);
+    Serial.println("Fan1 OFF");
+  } else if (msg == "on2") {
+    fan2State = true;
+    digitalWrite(FAN2_PIN, HIGH);
+    Serial.println("Fan2 ON");
+  } else if (msg == "off2") {
+    fan2State = false;
+    digitalWrite(FAN2_PIN, LOW);
+    Serial.println("Fan2 OFF");
+  }
+}
+
 // ========== 巴法云连接 ==========
 void connectBemfa() {
   if (bemfa.connected()) return;
@@ -182,7 +212,9 @@ void connectBemfa() {
 
 // ========== 巴法云上报 ==========
 void publishBemfa(float temp, float humi) {
-  String msg = "#" + String((int)temp) + "#" + String((int)humi) + "#" + (fanState ? "on" : "off");
+  // 格式：#温度#湿度#风扇1状态#风扇2状态
+  String msg = "#" + String((int)temp) + "#" + String((int)humi) + "#" +
+               (fan1State ? "on" : "off") + "#" + (fan2State ? "on" : "off");
 
   bool ok = bemfa.publish(BEMFA_TOPIC, msg.c_str());
   Serial.printf("Bemfa Pub: %s -> %s\n", msg.c_str(), ok ? "OK" : "FAIL");
@@ -198,9 +230,13 @@ void drawScreen(float temp, float humi) {
   tft.setCursor(10, 60);
   tft.printf("Humi: %.1f %%   ", humi);
 
-  tft.setTextColor(fanState ? TFT_RED : TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(fan1State ? TFT_RED : TFT_WHITE, TFT_BLACK);
   tft.setCursor(10, 90);
-  tft.printf("Fan:  %s   ", fanState ? "ON " : "OFF");
+  tft.printf("Fan1: %s   ", fan1State ? "ON " : "OFF");
+
+  tft.setTextColor(fan2State ? TFT_RED : TFT_WHITE, TFT_BLACK);
+  tft.setCursor(10, 120);
+  tft.printf("Fan2: %s   ", fan2State ? "ON " : "OFF");
 }
 
 // ========== Setup ==========
@@ -208,8 +244,10 @@ void setup() {
   Serial.begin(115200);
   Serial.println("System Starting...");
 
-  pinMode(FAN_PIN, OUTPUT);
-  digitalWrite(FAN_PIN, LOW);
+  pinMode(FAN1_PIN, OUTPUT);
+  pinMode(FAN2_PIN, OUTPUT);
+  digitalWrite(FAN1_PIN, LOW);
+  digitalWrite(FAN2_PIN, LOW);
 
   dht.begin();
 
@@ -225,6 +263,7 @@ void setup() {
   // 巴法云
   bemfa.setServer(BEMFA_SERVER, BEMFA_PORT);
   bemfa.setKeepAlive(60);
+  bemfa.setCallback(bemfaCallback);  // 设置回调函数
   connectBemfa();
 
   delay(1000);

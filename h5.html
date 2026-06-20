@@ -95,8 +95,13 @@
 </div>
 
 <div class="fan-card">
-  <div class="fan-label">💨 风扇控制</div>
-  <button class="fan-btn off" id="fanBtn" onclick="toggleFan()">开启风扇</button>
+  <div class="fan-label">💨 风扇1</div>
+  <button class="fan-btn off" id="fan1Btn" onclick="toggleFan(1)">开启风扇1</button>
+</div>
+
+<div class="fan-card" style="margin-top: 16px;">
+  <div class="fan-label">💨 风扇2</div>
+  <button class="fan-btn off" id="fan2Btn" onclick="toggleFan(2)">开启风扇2</button>
 </div>
 
 <div class="footer">数据每 5 秒自动刷新</div>
@@ -110,7 +115,8 @@
   const TOPIC      = 'temp004';
 
   // ========== 状态 ==========
-  let fanOn = false;
+  let fan1On = false;
+  let fan2On = false;
   let client = null;
 
   // ========== DOM ==========
@@ -118,7 +124,8 @@
   const statusText = document.getElementById('statusText');
   const tempValue  = document.getElementById('tempValue');
   const humiValue  = document.getElementById('humiValue');
-  const fanBtn     = document.getElementById('fanBtn');
+  const fan1Btn    = document.getElementById('fan1Btn');
+  const fan2Btn    = document.getElementById('fan2Btn');
 
   // ========== 连接巴法云 ==========
   function connect() {
@@ -138,15 +145,19 @@
     client.on('message', (topic, payload) => {
       const msg = payload.toString();
       console.log('Recv:', msg);
-      // 格式：#温度#湿度#开关状态
+      // 格式：#温度#湿度#风扇1状态#风扇2状态
       const parts = msg.split('#').filter(Boolean);
       if (parts.length >= 2) {
         tempValue.textContent = parts[0];
         humiValue.textContent = parts[1];
       }
       if (parts.length >= 3) {
-        fanOn = (parts[2] === 'on');
-        updateFanBtn();
+        fan1On = (parts[2] === 'on');
+        updateFan1Btn();
+      }
+      if (parts.length >= 4) {
+        fan2On = (parts[3] === 'on');
+        updateFan2Btn();
       }
     });
 
@@ -161,22 +172,41 @@
   }
 
   // ========== 风扇控制 ==========
-  function toggleFan() {
-    fanOn = !fanOn;
-    updateFanBtn();
-    if (client && client.connected) {
-      client.publish(TOPIC, fanOn ? 'on' : 'off');
-      console.log('Fan ->', fanOn ? 'on' : 'off');
+  function toggleFan(num) {
+    if (num === 1) {
+      fan1On = !fan1On;
+      updateFan1Btn();
+      if (client && client.connected) {
+        client.publish(TOPIC, fan1On ? 'on' : 'off');
+        console.log('Fan1 ->', fan1On ? 'on' : 'off');
+      }
+    } else {
+      fan2On = !fan2On;
+      updateFan2Btn();
+      if (client && client.connected) {
+        client.publish(TOPIC, fan2On ? 'on2' : 'off2');
+        console.log('Fan2 ->', fan2On ? 'on2' : 'off2');
+      }
     }
   }
 
-  function updateFanBtn() {
-    if (fanOn) {
-      fanBtn.className = 'fan-btn on';
-      fanBtn.textContent = '关闭风扇';
+  function updateFan1Btn() {
+    if (fan1On) {
+      fan1Btn.className = 'fan-btn on';
+      fan1Btn.textContent = '关闭风扇1';
     } else {
-      fanBtn.className = 'fan-btn off';
-      fanBtn.textContent = '开启风扇';
+      fan1Btn.className = 'fan-btn off';
+      fan1Btn.textContent = '开启风扇1';
+    }
+  }
+
+  function updateFan2Btn() {
+    if (fan2On) {
+      fan2Btn.className = 'fan-btn on';
+      fan2Btn.textContent = '关闭风扇2';
+    } else {
+      fan2Btn.className = 'fan-btn off';
+      fan2Btn.textContent = '开启风扇2';
     }
   }
 
