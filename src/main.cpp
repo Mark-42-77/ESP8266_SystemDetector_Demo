@@ -6,8 +6,8 @@
 #include <time.h>
 
 // ========== WiFi ==========
-const char* WIFI_SSID     = "TP-LINK_E14B";
-const char* WIFI_PASSWORD = "2kbctn2m";
+const char* WIFI_SSID     = "Friday";
+const char* WIFI_PASSWORD = "0987654321";
 
 // ========== 巴法云 (Bemfa) ==========
 const char* BEMFA_SERVER   = "bemfa.com";
@@ -22,6 +22,7 @@ const char* TOPIC_FAN2     = "light003";                    // 风扇2主题
 #define DHTTYPE    DHT11
 #define FAN1_PIN   4     // D2（风扇1）
 #define FAN2_PIN   5     // D1（风扇2）
+#define LIGHT_PIN  15    // D8（光敏传感器）
 
 // ========== 全局对象 ==========
 DHT dht(DHTPIN, DHTTYPE);
@@ -35,6 +36,7 @@ PubSubClient bemfa(bemfaClient);
 unsigned long lastReadTime  = 0;
 bool fan1State = false;  // 风扇1状态
 bool fan2State = false;  // 风扇2状态
+bool screenOn  = true;   // 屏幕状态
 
 // NTP 配置
 const char* NTP_SERVER1 = "ntp.aliyun.com";
@@ -297,6 +299,7 @@ void setup() {
 
   pinMode(FAN1_PIN, OUTPUT);
   pinMode(FAN2_PIN, OUTPUT);
+  pinMode(LIGHT_PIN, INPUT);
   digitalWrite(FAN1_PIN, LOW);
   digitalWrite(FAN2_PIN, LOW);
 
@@ -346,6 +349,17 @@ void loop() {
   }
   bemfa.loop();
 
+  // 光敏传感器检测（HIGH=暗，LOW=亮）
+  bool dark = digitalRead(LIGHT_PIN) == HIGH;
+  if (dark && screenOn) {
+    tft.fillScreen(TFT_BLACK);
+    screenOn = false;
+    Serial.println("Light Low -> Screen OFF");
+  } else if (!dark && !screenOn) {
+    screenOn = true;
+    Serial.println("Light High -> Screen ON");
+  }
+
   // 传感器采样（2秒间隔）
   if (millis() - lastReadTime > 2000) {
     lastReadTime = millis();
@@ -362,7 +376,9 @@ void loop() {
     }
 
     Serial.printf("Temp: %.1f C  Humi: %.1f %%\n", t, h);
-    drawScreen(t, h);
+    if (screenOn) {
+      drawScreen(t, h);
+    }
 
     // 巴法云上报（5秒间隔）
     static unsigned long lastBemfaTime = 0;
