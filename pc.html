@@ -205,10 +205,10 @@
 
   <div class="fan-section" style="margin-top: 0;">
     <div class="fan-info">
-      <span class="fan-icon">🔇</span>
+      <span class="fan-icon">🔊</span>
       <div>
-        <div class="fan-label">静音</div>
-        <div class="fan-status" id="muteStatusText">当前状态：未静音</div>
+        <div class="fan-label">蜂鸣器</div>
+        <div class="fan-status" id="muteStatusText">当前状态：关闭</div>
       </div>
     </div>
     <div class="fan-switch" id="muteSwitch" onclick="toggleMute()"></div>
@@ -234,8 +234,8 @@
   const TOPIC_TEMP = 'temp004';   // 温湿度（小爱查询）
   const TOPIC_DATA = 'data004';   // 光照+设备状态
   const TOPIC_FAN1 = 'fan003';
-  const TOPIC_FAN2 = 'light003';
-  const TOPIC_MUTE = 'mute004';
+  const TOPIC_FAN2 = 'humi006';
+  const TOPIC_MUTE = 'mute006';
 
   // ========== 状态 ==========
   let fan1On = false;
@@ -306,9 +306,9 @@
         }
         addLog('数据', `光照:${parts[0] || '--'}% / ${parts[1] || '--'}lx / 风扇:${parts[2] || '--'} / 加湿器:${parts[3] || '--'}`);
       } else if (topic === TOPIC_MUTE) {
-        muted = (msg === 'on');
+        muted = (msg === 'off');
         updateMuteUI();
-        addLog('控制', `静音 -> ${muted ? '开启' : '关闭'}`);
+        addLog('控制', `蜂鸣器 -> ${muted ? '关闭' : '开启'}`);
       }
     });
 
@@ -366,18 +366,18 @@
     muted = !muted;
     updateMuteUI();
     if (client && client.connected) {
-      client.publish(TOPIC_MUTE, muted ? 'on' : 'off');
-      addLog('控制', `静音 -> ${muted ? '开启' : '关闭'}`);
+      client.publish(TOPIC_MUTE, muted ? 'off' : 'on');
+      addLog('控制', `蜂鸣器 -> ${muted ? '关闭' : '开启'}`);
     }
   }
 
   function updateMuteUI() {
     if (muted) {
-      muteSwitch.classList.add('on');
-      muteStatusTxt.textContent = '当前状态：已静音';
-    } else {
       muteSwitch.classList.remove('on');
-      muteStatusTxt.textContent = '当前状态：未静音';
+      muteStatusTxt.textContent = '当前状态：关闭';
+    } else {
+      muteSwitch.classList.add('on');
+      muteStatusTxt.textContent = '当前状态：开启';
     }
   }
 

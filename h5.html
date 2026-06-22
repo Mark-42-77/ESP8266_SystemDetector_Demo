@@ -113,8 +113,8 @@
 </div>
 
 <div class="fan-card" style="margin-top: 16px;">
-  <div class="fan-label">🔇 静音</div>
-  <button class="fan-btn off" id="muteBtn" onclick="toggleMute()">开启静音</button>
+  <div class="fan-label">🔊 蜂鸣器</div>
+  <button class="fan-btn off" id="muteBtn" onclick="toggleMute()">开启蜂鸣器</button>
 </div>
 
 <div class="footer">数据每 5 秒自动刷新</div>
@@ -128,8 +128,8 @@
   const TOPIC_TEMP = 'temp004';   // 温湿度（小爱查询）
   const TOPIC_DATA = 'data004';   // 光照+设备状态
   const TOPIC_FAN1 = 'fan003';
-  const TOPIC_FAN2 = 'light003';
-  const TOPIC_MUTE = 'mute004';
+  const TOPIC_FAN2 = 'humi006';
+  const TOPIC_MUTE = 'mute006';
 
   // ========== 状态 ==========
   let fan1On = false;
@@ -192,7 +192,7 @@
           updateFan2Btn();
         }
       } else if (topic === TOPIC_MUTE) {
-        muted = (msg === 'on');
+        muted = (msg === 'off');
         updateMuteBtn();
       }
     });
@@ -250,17 +250,17 @@
     muted = !muted;
     updateMuteBtn();
     if (client && client.connected) {
-      client.publish(TOPIC_MUTE, muted ? 'on' : 'off');
+      client.publish(TOPIC_MUTE, muted ? 'off' : 'on');
     }
   }
 
   function updateMuteBtn() {
     if (muted) {
-      muteBtn.className = 'fan-btn on';
-      muteBtn.textContent = '取消静音';
-    } else {
       muteBtn.className = 'fan-btn off';
-      muteBtn.textContent = '开启静音';
+      muteBtn.textContent = '开启蜂鸣器';
+    } else {
+      muteBtn.className = 'fan-btn on';
+      muteBtn.textContent = '关闭蜂鸣器';
     }
   }
 

@@ -17,8 +17,8 @@ const char* BEMFA_KEY      = "ff2aba976550475080b2c399fad134a0"; // UID/私钥
 const char* TOPIC_TEMP     = "temp004";                     // 温湿度主题（小爱查询）
 const char* TOPIC_DATA     = "data004";                     // 光照+设备状态主题（网页用）
 const char* TOPIC_FAN1     = "fan003";                      // 风扇主题
-const char* TOPIC_FAN2     = "light003";                    // 加湿器主题
-const char* TOPIC_MUTE     = "mute004";                     // 静音控制主题
+const char* TOPIC_FAN2     = "humi006";                    // 加湿器主题
+const char* TOPIC_MUTE     = "mute006";                     // 静音控制主题
 
 // ========== 硬件引脚 ==========
 #define DHTPIN     12    // D6
@@ -232,7 +232,7 @@ void bemfaCallback(char* topic, byte* payload, unsigned int length) {
     }
   }
 
-  // 加湿器控制（light003 主题）
+  // 加湿器控制（humi006 主题）
   if (String(topic) == TOPIC_FAN2) {
     if (msg == "on") {
       fan2State = true;
@@ -245,15 +245,15 @@ void bemfaCallback(char* topic, byte* payload, unsigned int length) {
     }
   }
 
-  // 静音控制（mute004 主题）
+  // 蜂鸣器开关（mute006 主题，on=开启 off=静音）
   if (String(topic) == TOPIC_MUTE) {
     if (msg == "on") {
-      muted = true;
-      digitalWrite(BUZZER_PIN, HIGH);  // 立即静音
-      Serial.println("Muted ON");
-    } else if (msg == "off") {
       muted = false;
-      Serial.println("Muted OFF");
+      Serial.println("Buzzer enabled");
+    } else if (msg == "off") {
+      muted = true;
+      digitalWrite(BUZZER_PIN, HIGH);  // 立即停止
+      Serial.println("Buzzer muted");
     }
   }
 }
@@ -349,10 +349,10 @@ void drawScreen(float temp, float humi) {
   tft.setCursor(10, 190);
   tft.printf("L:%3d%%/%5dlx  ", lightPct, lightLux);
 
-  // 显示静音状态
-  tft.setTextColor(muted ? TFT_YELLOW : TFT_WHITE, TFT_BLACK);
+  // 显示蜂鸣器状态
+  tft.setTextColor(muted ? TFT_WHITE : TFT_YELLOW, TFT_BLACK);
   tft.setCursor(10, 220);
-  tft.printf("Mute: %s   ", muted ? "ON " : "OFF");
+  tft.printf("Buzz: %s   ", muted ? "OFF" : "ON ");
 }
 
 // ========== Setup ==========
