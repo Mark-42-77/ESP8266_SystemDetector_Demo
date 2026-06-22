@@ -4,6 +4,7 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <time.h>
+#include <math.h>
 
 // ========== WiFi ==========
 const char* WIFI_SSID     = "Friday";
@@ -13,7 +14,8 @@ const char* WIFI_PASSWORD = "0987654321";
 const char* BEMFA_SERVER   = "bemfa.com";
 const int   BEMFA_PORT     = 9501;
 const char* BEMFA_KEY      = "ff2aba976550475080b2c399fad134a0"; // UID/私钥
-const char* TOPIC_TEMP     = "temp004";                     // 温湿度主题
+const char* TOPIC_TEMP     = "temp004";                     // 温湿度主题（小爱查询）
+const char* TOPIC_DATA     = "data004";                     // 光照+风扇状态主题（网页用）
 const char* TOPIC_FAN1     = "fan003";                      // 风扇1主题
 const char* TOPIC_FAN2     = "light003";                    // 风扇2主题
 
@@ -22,7 +24,8 @@ const char* TOPIC_FAN2     = "light003";                    // 风扇2主题
 #define DHTTYPE    DHT11
 #define FAN1_PIN   4     // D2（风扇1）
 #define FAN2_PIN   5     // D1（风扇2）
-#define LIGHT_PIN  15    // D8（光敏传感器）
+#define LIGHT_DO   15    // D8（光敏数字输出，控制屏幕开关）
+#define LIGHT_AO   A0    // A0（光敏模拟输出，读取光照强度）
 
 // ========== 全局对象 ==========
 DHT dht(DHTPIN, DHTTYPE);
@@ -37,6 +40,8 @@ unsigned long lastReadTime  = 0;
 bool fan1State = false;  // 风扇1状态
 bool fan2State = false;  // 风扇2状态
 bool screenOn  = true;   // 屏幕状态
+int  lightPct  = 0;      // 光照百分比（0-100）
+int  lightLux  = 0;      // 光照估算值（lux）
 
 // NTP 配置
 const char* NTP_SERVER1 = "ntp.aliyun.com";
@@ -222,9 +227,10 @@ void connectBemfa() {
   if (ok) {
     Serial.println("Bemfa connected!");
     bemfa.subscribe(TOPIC_TEMP);
+    bemfa.subscribe(TOPIC_DATA);
     bemfa.subscribe(TOPIC_FAN1);
     bemfa.subscribe(TOPIC_FAN2);
-    Serial.printf("Bemfa subscribed: %s, %s, %s\n", TOPIC_TEMP, TOPIC_FAN1, TOPIC_FAN2);
+    Serial.printf("Bemfa subscribed: %s, %s, %s, %s\n", TOPIC_TEMP, TOPIC_DATA, TOPIC_FAN1, TOPIC_FAN2);
   } else {
     Serial.printf("Bemfa failed, rc=%d\n", bemfa.state());
   }
@@ -232,12 +238,16 @@ void connectBemfa() {
 
 // ========== 巴法云上报 ==========
 void publishBemfa(float temp, float humi) {
-  // 格式：#温度#湿度#风扇1状态#风扇2状态
-  String msg = "#" + String((int)temp) + "#" + String((int)humi) + "#" +
-               (fan1State ? "on" : "off") + "#" + (fan2State ? "on" : "off");
+  // temp004：标准温湿度格式（小爱查询）
+  String msgTH = "#" + String((int)temp) + "#" + String((int)humi);
+  bool ok1 = bemfa.publish(TOPIC_TEMP, msgTH.c_str());
+  Serial.printf("Bemfa Pub [%s]: %s -> %s\n", TOPIC_TEMP, msgTH.c_str(), ok1 ? "OK" : "FAIL");
 
-  bool ok = bemfa.publish(TOPIC_TEMP, msg.c_str());
-  Serial.printf("Bemfa Pub: %s -> %s\n", msg.c_str(), ok ? "OK" : "FAIL");
+  // data004：光照+风扇状态（网页用）
+  String msgData = "#" + String(lightPct) + "#" + String(lightLux) + "#" +
+                   (fan1State ? "on" : "off") + "#" + (fan2State ? "on" : "off");
+  bool ok2 = bemfa.publish(TOPIC_DATA, msgData.c_str());
+  Serial.printf("Bemfa Pub [%s]: %s -> %s\n", TOPIC_DATA, msgData.c_str(), ok2 ? "OK" : "FAIL");
 }
 
 // ========== 获取星期字符串 ==========
@@ -290,6 +300,11 @@ void drawScreen(float temp, float humi) {
   tft.setTextColor(fan2State ? TFT_RED : TFT_WHITE, TFT_BLACK);
   tft.setCursor(10, 160);
   tft.printf("Fan2: %s   ", fan2State ? "ON " : "OFF");
+
+  // 显示光照强度（百分比 + lux 同时显示对比）
+  tft.setTextColor(TFT_MAGENTA, TFT_BLACK);
+  tft.setCursor(10, 190);
+  tft.printf("L:%3d%%/%5dlx  ", lightPct, lightLux);
 }
 
 // ========== Setup ==========
@@ -299,7 +314,7 @@ void setup() {
 
   pinMode(FAN1_PIN, OUTPUT);
   pinMode(FAN2_PIN, OUTPUT);
-  pinMode(LIGHT_PIN, INPUT);
+  pinMode(LIGHT_DO, INPUT);
   digitalWrite(FAN1_PIN, LOW);
   digitalWrite(FAN2_PIN, LOW);
 
@@ -350,7 +365,7 @@ void loop() {
   bemfa.loop();
 
   // 光敏传感器检测（HIGH=暗，LOW=亮）
-  bool dark = digitalRead(LIGHT_PIN) == HIGH;
+  bool dark = digitalRead(LIGHT_DO) == HIGH;
   if (dark && screenOn) {
     tft.fillScreen(TFT_BLACK);
     screenOn = false;
@@ -364,18 +379,29 @@ void loop() {
   if (millis() - lastReadTime > 2000) {
     lastReadTime = millis();
 
+    // 读取光照强度（模块：暗时AO电压高，亮时低）
+    int adc = analogRead(LIGHT_AO);
+    lightPct = constrain((1023 - adc) * 100 / 1023, 0, 100);
+    // GL5506 + 10K 分压近似 lux（误差大，仅供参考）
+    // 模块电路：3.3V ─[10K]─ A0 ─[GL5506]─ GND
+    float R_ldr = 10000.0 * adc / (1024 - adc + 1.0);
+    float lux = pow(50120.0 / R_ldr, 1.4286);
+    lightLux = constrain((int)lux, 0, 100000);
+
     float h = dht.readHumidity();
     float t = dht.readTemperature();
 
     if (isnan(h) || isnan(t)) {
       Serial.println("DHT read error!");
-      tft.setTextColor(TFT_RED, TFT_BLACK);
-      tft.setCursor(10, 30);
-      tft.print("DHT Error!   ");
+      if (screenOn) {
+        tft.setTextColor(TFT_RED, TFT_BLACK);
+        tft.setCursor(10, 30);
+        tft.print("DHT Error!   ");
+      }
       return;
     }
 
-    Serial.printf("Temp: %.1f C  Humi: %.1f %%\n", t, h);
+    Serial.printf("Temp: %.1f C  Humi: %.1f %%  Light: %d%% / %d lx\n", t, h, lightPct, lightLux);
     if (screenOn) {
       drawScreen(t, h);
     }
