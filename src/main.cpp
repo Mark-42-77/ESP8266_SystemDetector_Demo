@@ -15,17 +15,19 @@ const char* BEMFA_SERVER   = "bemfa.com";
 const int   BEMFA_PORT     = 9501;
 const char* BEMFA_KEY      = "ff2aba976550475080b2c399fad134a0"; // UID/私钥
 const char* TOPIC_TEMP     = "temp004";                     // 温湿度主题（小爱查询）
-const char* TOPIC_DATA     = "data004";                     // 光照+风扇状态主题（网页用）
-const char* TOPIC_FAN1     = "fan003";                      // 风扇1主题
-const char* TOPIC_FAN2     = "light003";                    // 风扇2主题
+const char* TOPIC_DATA     = "data004";                     // 光照+设备状态主题（网页用）
+const char* TOPIC_FAN1     = "fan003";                      // 风扇主题
+const char* TOPIC_FAN2     = "light003";                    // 加湿器主题
+const char* TOPIC_MUTE     = "mute004";                     // 静音控制主题
 
 // ========== 硬件引脚 ==========
 #define DHTPIN     12    // D6
 #define DHTTYPE    DHT11
-#define FAN1_PIN   4     // D2（风扇1）
-#define FAN2_PIN   5     // D1（风扇2）
+#define FAN1_PIN   4     // D2（风扇）
+#define FAN2_PIN   5     // D1（加湿器）
 #define LIGHT_DO   15    // D8（光敏数字输出，控制屏幕开关）
 #define LIGHT_AO   A0    // A0（光敏模拟输出，读取光照强度）
+#define BUZZER_PIN 16    // D0（蜂鸣器）
 
 // ========== 全局对象 ==========
 DHT dht(DHTPIN, DHTTYPE);
@@ -37,11 +39,39 @@ PubSubClient bemfa(bemfaClient);
 
 // ========== 时间控制 ==========
 unsigned long lastReadTime  = 0;
-bool fan1State = false;  // 风扇1状态
-bool fan2State = false;  // 风扇2状态
+bool fan1State = false;  // 风扇状态
+bool fan2State = false;  // 加湿器状态
 bool screenOn  = true;   // 屏幕状态
 int  lightPct  = 0;      // 光照百分比（0-100）
 int  lightLux  = 0;      // 光照估算值（lux）
+
+// ========== 蜂鸣器报警 ==========
+float TEMP_ALARM = 29.0;   // 温度报警阈值（℃）
+float HUMI_ALARM = 96.0;   // 湿度报警阈值（%）
+const int  BEEP_MS  = 1000; // 蜂鸣时长（ms）
+unsigned long buzzerUntil = 0;  // 蜂鸣结束时刻（0=停）
+bool tempAlerted = false;  // 防止反复触发
+bool humiAlerted = false;
+bool darkAlerted = false;
+bool muted = false;        // 静音状态
+
+void beep() {
+  if (muted) {
+    Serial.println("Buzzer muted, skip");
+    return;
+  }
+  digitalWrite(BUZZER_PIN, LOW);
+  buzzerUntil = millis() + BEEP_MS;
+  Serial.println("Buzzer ON");
+}
+
+void buzzerLoop() {
+  if (buzzerUntil > 0 && millis() >= buzzerUntil) {
+    digitalWrite(BUZZER_PIN, HIGH);
+    buzzerUntil = 0;
+    Serial.println("Buzzer OFF");
+  }
+}
 
 // NTP 配置
 const char* NTP_SERVER1 = "ntp.aliyun.com";
@@ -202,16 +232,28 @@ void bemfaCallback(char* topic, byte* payload, unsigned int length) {
     }
   }
 
-  // 风扇2控制（light003 主题）
+  // 加湿器控制（light003 主题）
   if (String(topic) == TOPIC_FAN2) {
     if (msg == "on") {
       fan2State = true;
       digitalWrite(FAN2_PIN, HIGH);
-      Serial.println("Fan2 ON");
+      Serial.println("Humidifier ON");
     } else if (msg == "off") {
       fan2State = false;
       digitalWrite(FAN2_PIN, LOW);
-      Serial.println("Fan2 OFF");
+      Serial.println("Humidifier OFF");
+    }
+  }
+
+  // 静音控制（mute004 主题）
+  if (String(topic) == TOPIC_MUTE) {
+    if (msg == "on") {
+      muted = true;
+      digitalWrite(BUZZER_PIN, HIGH);  // 立即静音
+      Serial.println("Muted ON");
+    } else if (msg == "off") {
+      muted = false;
+      Serial.println("Muted OFF");
     }
   }
 }
@@ -230,7 +272,8 @@ void connectBemfa() {
     bemfa.subscribe(TOPIC_DATA);
     bemfa.subscribe(TOPIC_FAN1);
     bemfa.subscribe(TOPIC_FAN2);
-    Serial.printf("Bemfa subscribed: %s, %s, %s, %s\n", TOPIC_TEMP, TOPIC_DATA, TOPIC_FAN1, TOPIC_FAN2);
+    bemfa.subscribe(TOPIC_MUTE);
+    Serial.printf("Bemfa subscribed: %s, %s, %s, %s, %s\n", TOPIC_TEMP, TOPIC_DATA, TOPIC_FAN1, TOPIC_FAN2, TOPIC_MUTE);
   } else {
     Serial.printf("Bemfa failed, rc=%d\n", bemfa.state());
   }
@@ -292,19 +335,24 @@ void drawScreen(float temp, float humi) {
   tft.setCursor(10, 100);
   tft.printf("Humi: %.1f %%   ", humi);
 
-  // 显示风扇状态
+  // 显示风扇/加湿器状态
   tft.setTextColor(fan1State ? TFT_RED : TFT_WHITE, TFT_BLACK);
   tft.setCursor(10, 130);
-  tft.printf("Fan1: %s   ", fan1State ? "ON " : "OFF");
+  tft.printf("Fan : %s   ", fan1State ? "ON " : "OFF");
 
-  tft.setTextColor(fan2State ? TFT_RED : TFT_WHITE, TFT_BLACK);
+  tft.setTextColor(fan2State ? TFT_BLUE : TFT_WHITE, TFT_BLACK);
   tft.setCursor(10, 160);
-  tft.printf("Fan2: %s   ", fan2State ? "ON " : "OFF");
+  tft.printf("Humi: %s   ", fan2State ? "ON " : "OFF");
 
   // 显示光照强度（百分比 + lux 同时显示对比）
   tft.setTextColor(TFT_MAGENTA, TFT_BLACK);
   tft.setCursor(10, 190);
   tft.printf("L:%3d%%/%5dlx  ", lightPct, lightLux);
+
+  // 显示静音状态
+  tft.setTextColor(muted ? TFT_YELLOW : TFT_WHITE, TFT_BLACK);
+  tft.setCursor(10, 220);
+  tft.printf("Mute: %s   ", muted ? "ON " : "OFF");
 }
 
 // ========== Setup ==========
@@ -314,9 +362,11 @@ void setup() {
 
   pinMode(FAN1_PIN, OUTPUT);
   pinMode(FAN2_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
   pinMode(LIGHT_DO, INPUT);
   digitalWrite(FAN1_PIN, LOW);
   digitalWrite(FAN2_PIN, LOW);
+  digitalWrite(BUZZER_PIN, HIGH);  // 低电平触发，默认 HIGH 不响
 
   dht.begin();
 
@@ -370,10 +420,18 @@ void loop() {
     tft.fillScreen(TFT_BLACK);
     screenOn = false;
     Serial.println("Light Low -> Screen OFF");
+    if (!darkAlerted) {
+      beep();
+      darkAlerted = true;
+    }
   } else if (!dark && !screenOn) {
     screenOn = true;
     Serial.println("Light High -> Screen ON");
+    darkAlerted = false;
   }
+
+  // 蜂鸣器非阻塞关断
+  buzzerLoop();
 
   // 传感器采样（2秒间隔）
   if (millis() - lastReadTime > 2000) {
@@ -404,6 +462,26 @@ void loop() {
     Serial.printf("Temp: %.1f C  Humi: %.1f %%  Light: %d%% / %d lx\n", t, h, lightPct, lightLux);
     if (screenOn) {
       drawScreen(t, h);
+    }
+
+    // 温度报警（迟滞，防止反复触发）
+    if (t > TEMP_ALARM) {
+      if (!tempAlerted) {
+        beep();
+        tempAlerted = true;
+      }
+    } else if (t < TEMP_ALARM - 1.0) {
+      tempAlerted = false;
+    }
+
+    // 湿度报警
+    if (h > HUMI_ALARM) {
+      if (!humiAlerted) {
+        beep();
+        humiAlerted = true;
+      }
+    } else if (h < HUMI_ALARM - 2.0) {
+      humiAlerted = false;
     }
 
     // 巴法云上报（5秒间隔）

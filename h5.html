@@ -112,6 +112,11 @@
   <button class="fan-btn off" id="fan2Btn" onclick="toggleFan(2)">开启加湿器</button>
 </div>
 
+<div class="fan-card" style="margin-top: 16px;">
+  <div class="fan-label">🔇 静音</div>
+  <button class="fan-btn off" id="muteBtn" onclick="toggleMute()">开启静音</button>
+</div>
+
 <div class="footer">数据每 5 秒自动刷新</div>
 
 <!-- MQTT.js CDN -->
@@ -121,13 +126,15 @@
   const BROKER_URL = 'wss://bemfa.com:9504/wss';
   const BEMFA_KEY  = 'ff2aba976550475080b2c399fad134a0';
   const TOPIC_TEMP = 'temp004';   // 温湿度（小爱查询）
-  const TOPIC_DATA = 'data004';   // 光照+风扇状态
+  const TOPIC_DATA = 'data004';   // 光照+设备状态
   const TOPIC_FAN1 = 'fan003';
   const TOPIC_FAN2 = 'light003';
+  const TOPIC_MUTE = 'mute004';
 
   // ========== 状态 ==========
   let fan1On = false;
   let fan2On = false;
+  let muted  = false;
   let client = null;
 
   // ========== DOM ==========
@@ -139,6 +146,7 @@
   const lightLux   = document.getElementById('lightLux');
   const fan1Btn    = document.getElementById('fan1Btn');
   const fan2Btn    = document.getElementById('fan2Btn');
+  const muteBtn    = document.getElementById('muteBtn');
 
   // ========== 连接巴法云 ==========
   function connect() {
@@ -155,6 +163,7 @@
       client.subscribe(TOPIC_DATA);
       client.subscribe(TOPIC_FAN1);
       client.subscribe(TOPIC_FAN2);
+      client.subscribe(TOPIC_MUTE);
       console.log('Bemfa connected');
     });
 
@@ -182,6 +191,9 @@
           fan2On = (parts[3] === 'on');
           updateFan2Btn();
         }
+      } else if (topic === TOPIC_MUTE) {
+        muted = (msg === 'on');
+        updateMuteBtn();
       }
     });
 
@@ -231,6 +243,24 @@
     } else {
       fan2Btn.className = 'fan-btn off';
       fan2Btn.textContent = '开启加湿器';
+    }
+  }
+
+  function toggleMute() {
+    muted = !muted;
+    updateMuteBtn();
+    if (client && client.connected) {
+      client.publish(TOPIC_MUTE, muted ? 'on' : 'off');
+    }
+  }
+
+  function updateMuteBtn() {
+    if (muted) {
+      muteBtn.className = 'fan-btn on';
+      muteBtn.textContent = '取消静音';
+    } else {
+      muteBtn.className = 'fan-btn off';
+      muteBtn.textContent = '开启静音';
     }
   }
 
