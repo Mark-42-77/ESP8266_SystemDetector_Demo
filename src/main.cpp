@@ -25,7 +25,6 @@ const char* TOPIC_MUTE     = "mute006";                     // 静音控制主�
 #define DHTTYPE    DHT11
 #define FAN1_PIN   4     // D2（风扇）
 #define FAN2_PIN   5     // D1（加湿器）
-#define LIGHT_DO   15    // D8（光敏数字输出，控制屏幕开关）
 #define LIGHT_AO   A0    // A0（光敏模拟输出，读取光照强度）
 #define BUZZER_PIN 16    // D0（蜂鸣器）
 
@@ -44,6 +43,10 @@ bool fan2State = false;  // 加湿器状态
 bool screenOn  = true;   // 屏幕状态
 int  lightPct  = 0;      // 光照百分比（0-100）
 int  lightLux  = 0;      // 光照估算值（lux）
+
+// ========== 模拟量屏幕熄屏阈值 ==========
+const int LIGHT_OFF_THRESHOLD = 50;   // 低于50%熄屏（手遮≈45%，真暗<5%）
+const int LIGHT_ON_THRESHOLD  = 65;   // 高于65%亮屏（迟滞15%）
 
 // ========== 蜂鸣器报警 ==========
 float TEMP_ALARM = 29.0;   // 温度报警阈值（℃）
@@ -363,7 +366,6 @@ void setup() {
   pinMode(FAN1_PIN, OUTPUT);
   pinMode(FAN2_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(LIGHT_DO, INPUT);
   digitalWrite(FAN1_PIN, LOW);
   digitalWrite(FAN2_PIN, LOW);
   digitalWrite(BUZZER_PIN, HIGH);  // 低电平触发，默认 HIGH 不响
@@ -414,22 +416,6 @@ void loop() {
   }
   bemfa.loop();
 
-  // 光敏传感器检测（HIGH=暗，LOW=亮）
-  bool dark = digitalRead(LIGHT_DO) == HIGH;
-  if (dark && screenOn) {
-    tft.fillScreen(TFT_BLACK);
-    screenOn = false;
-    Serial.println("Light Low -> Screen OFF");
-    if (!darkAlerted) {
-      beep();
-      darkAlerted = true;
-    }
-  } else if (!dark && !screenOn) {
-    screenOn = true;
-    Serial.println("Light High -> Screen ON");
-    darkAlerted = false;
-  }
-
   // 蜂鸣器非阻塞关断
   buzzerLoop();
 
@@ -437,14 +423,28 @@ void loop() {
   if (millis() - lastReadTime > 2000) {
     lastReadTime = millis();
 
-    // 读取光照强度（模块：暗时AO电压高，亮时低）
+    // 读取光照强度（电路：3.3V→LDR→A0→10K→GND，亮=ADC高，暗=ADC低）
     int adc = analogRead(LIGHT_AO);
-    lightPct = constrain((1023 - adc) * 100 / 1023, 0, 100);
-    // GL5506 + 10K 分压近似 lux（误差大，仅供参考）
-    // 模块电路：3.3V ─[10K]─ A0 ─[GL5506]─ GND
-    float R_ldr = 10000.0 * adc / (1024 - adc + 1.0);
-    float lux = pow(50120.0 / R_ldr, 1.4286);
+    lightPct = constrain(adc * 100 / 1023, 0, 100);
+    // R_ldr = 10K × (1024 - adc) / adc （LDR在上，10K在下分压）
+    float R_ldr = 10000.0f * (1024 - adc) / (adc + 1.0f);
+    float lux = pow(50120.0f / R_ldr, 1.4286f);
     lightLux = constrain((int)lux, 0, 100000);
+
+    // 模拟量屏幕熄屏控制（迟滞防抖）
+    if (lightPct < LIGHT_OFF_THRESHOLD && screenOn) {
+      tft.fillScreen(TFT_BLACK);
+      screenOn = false;
+      Serial.printf("Light %d%% -> Screen OFF\n", lightPct);
+      if (!darkAlerted) {
+        beep();
+        darkAlerted = true;
+      }
+    } else if (lightPct > LIGHT_ON_THRESHOLD && !screenOn) {
+      screenOn = true;
+      Serial.printf("Light %d%% -> Screen ON\n", lightPct);
+      darkAlerted = false;
+    }
 
     float h = dht.readHumidity();
     float t = dht.readTemperature();
