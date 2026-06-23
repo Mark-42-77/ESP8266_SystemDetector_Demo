@@ -26,6 +26,7 @@ const char* TOPIC_MUTE     = "mute006";                     // 静音控制主�
 #define FAN1_PIN   4     // D2（风扇）
 #define FAN2_PIN   5     // D1（加湿器）
 #define LIGHT_AO   A0    // A0（光敏模拟输出，读取光照强度）
+#define SR602_PIN  15    // D8（人体存在传感器，HIGH=有人）
 #define BUZZER_PIN 16    // D0（蜂鸣器）
 
 // ========== 全局对象 ==========
@@ -41,6 +42,7 @@ unsigned long lastReadTime  = 0;
 bool fan1State = false;  // 风扇状态
 bool fan2State = false;  // 加湿器状态
 bool screenOn  = true;   // 屏幕状态
+bool presenceState = false;  // SR602 人体存在状态
 int  lightPct  = 0;      // 光照百分比（0-100）
 int  lightLux  = 0;      // 光照估算值（lux）
 
@@ -289,9 +291,10 @@ void publishBemfa(float temp, float humi) {
   bool ok1 = bemfa.publish(TOPIC_TEMP, msgTH.c_str());
   Serial.printf("Bemfa Pub [%s]: %s -> %s\n", TOPIC_TEMP, msgTH.c_str(), ok1 ? "OK" : "FAIL");
 
-  // data004：光照+风扇状态（网页用）
+  // data004：光照+设备状态+人体存在（网页用）
   String msgData = "#" + String(lightPct) + "#" + String(lightLux) + "#" +
-                   (fan1State ? "on" : "off") + "#" + (fan2State ? "on" : "off");
+                   (fan1State ? "on" : "off") + "#" + (fan2State ? "on" : "off") + "#" +
+                   (presenceState ? "on" : "off");
   bool ok2 = bemfa.publish(TOPIC_DATA, msgData.c_str());
   Serial.printf("Bemfa Pub [%s]: %s -> %s\n", TOPIC_DATA, msgData.c_str(), ok2 ? "OK" : "FAIL");
 }
@@ -347,10 +350,10 @@ void drawScreen(float temp, float humi) {
   tft.setCursor(10, 160);
   tft.printf("Humi: %s   ", fan2State ? "ON " : "OFF");
 
-  // 显示光照强度（百分比 + lux 同时显示对比）
-  tft.setTextColor(TFT_MAGENTA, TFT_BLACK);
+  // 显示人体存在 + 光照强度
+  tft.setTextColor(presenceState ? TFT_GREEN : TFT_MAGENTA, TFT_BLACK);
   tft.setCursor(10, 190);
-  tft.printf("L:%3d%%/%5dlx  ", lightPct, lightLux);
+  tft.printf("P:%s L:%3d%%  ", presenceState ? "YES" : "NO", lightPct);
 
   // 显示蜂鸣器状态
   tft.setTextColor(muted ? TFT_WHITE : TFT_YELLOW, TFT_BLACK);
@@ -365,6 +368,7 @@ void setup() {
 
   pinMode(FAN1_PIN, OUTPUT);
   pinMode(FAN2_PIN, OUTPUT);
+  pinMode(SR602_PIN, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(FAN1_PIN, LOW);
   digitalWrite(FAN2_PIN, LOW);
@@ -431,19 +435,32 @@ void loop() {
     float lux = pow(50120.0f / R_ldr, 1.4286f);
     lightLux = constrain((int)lux, 0, 100000);
 
-    // 模拟量屏幕熄屏控制（迟滞防抖）
-    if (lightPct < LIGHT_OFF_THRESHOLD && screenOn) {
+    // SR602 人体存在检测 + 光照联合控制屏幕
+    bool present = digitalRead(SR602_PIN) == HIGH;
+    if (present && !presenceState) {
+      Serial.println("Presence detected");
+    } else if (!present && presenceState) {
+      Serial.println("Presence lost");
+    }
+    presenceState = present;
+
+    // 有人 + 光照足够 → 亮屏；没人或光照不足 → 熄屏
+    if (presenceState && lightPct > LIGHT_ON_THRESHOLD && !screenOn) {
+      screenOn = true;
+      Serial.printf("Presence + Light %d%% -> Screen ON\n", lightPct);
+      darkAlerted = false;
+    } else if ((!presenceState || lightPct < LIGHT_OFF_THRESHOLD) && screenOn) {
       tft.fillScreen(TFT_BLACK);
       screenOn = false;
-      Serial.printf("Light %d%% -> Screen OFF\n", lightPct);
+      if (!presenceState) {
+        Serial.println("No presence -> Screen OFF");
+      } else {
+        Serial.printf("Light %d%% -> Screen OFF\n", lightPct);
+      }
       if (!darkAlerted) {
         beep();
         darkAlerted = true;
       }
-    } else if (lightPct > LIGHT_ON_THRESHOLD && !screenOn) {
-      screenOn = true;
-      Serial.printf("Light %d%% -> Screen ON\n", lightPct);
-      darkAlerted = false;
     }
 
     float h = dht.readHumidity();
@@ -459,7 +476,8 @@ void loop() {
       return;
     }
 
-    Serial.printf("Temp: %.1f C  Humi: %.1f %%  Light: %d%% / %d lx\n", t, h, lightPct, lightLux);
+    Serial.printf("Temp: %.1f C  Humi: %.1f %%  Light: %d%%/%d lx  Presence: %s\n",
+                  t, h, lightPct, lightLux, presenceState ? "YES" : "NO");
     if (screenOn) {
       drawScreen(t, h);
     }
